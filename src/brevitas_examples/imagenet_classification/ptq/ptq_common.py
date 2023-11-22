@@ -1,8 +1,6 @@
 # Copyright (C) 2023, Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-
 import torch
-import torch.backends.cudnn as cudnn
 
 from brevitas.core.function_wrapper.ops_ste import CeilSte
 from brevitas.graph.calibrate import bias_correction_mode
@@ -24,18 +22,250 @@ from brevitas.quant.scaled_int import Int16Bias
 from brevitas.quant.scaled_int import Int32Bias
 from brevitas.quant.shifted_scaled_int import ShiftedUint8ActPerTensorFixedPoint
 from brevitas.quant.shifted_scaled_int import ShiftedUint8ActPerTensorFloat
+import brevitas.nn as qnn
+import torch.nn as nn
+from brevitas.inject import value
+from brevitas.quant import Int8WeightPerTensorFixedPoint
+from brevitas.quant import Uint8ActPerTensorFloat
+from brevitas.quant import Int8ActPerTensorFloat
+from brevitas.quant import Int8ActPerTensorFloatMinMaxInit
+from brevitas.quant import Uint8ActPerTensorFloatMaxInit
+import tqdm
 
-LAYER_MAP = {
+def get_layer_map(weight_bit_width_map, activation_bit_width_map, weight_bit_width, act_bit_width, backend):
+    class VariableBitWidthInt8WeightPerTensorFixedPoint(Int8WeightPerTensorFixedPoint):
+        @value
+        def bit_width(module):
+            if module in weight_bit_width_map:
+                return weight_bit_width_map[module]
+            else:
+                weight_bit_width_map[module] = weight_bit_width
+                return weight_bit_width
+    WEIGHT_QUANT = VariableBitWidthInt8WeightPerTensorFixedPoint
+
+    class VariableBitWidthUint8ActPerTensorFloat(Uint8ActPerTensorFloat):
+        @value
+        def bit_width(module):
+            if module in activation_bit_width_map:
+                return activation_bit_width_map[module]
+            else:
+                activation_bit_width_map[module] = act_bit_width
+                return act_bit_width
+    
+    U_ACT_QUANT = VariableBitWidthUint8ActPerTensorFloat
+
+    class VariableBitWidthInt8ActPerTensorFloat(Int8ActPerTensorFloat):
+        @value
+        def bit_width(module):
+            if module in activation_bit_width_map:
+                return activation_bit_width_map[module]
+            else:
+                activation_bit_width_map[module] = act_bit_width
+                return act_bit_width
+    
+    ACT_QUANT = VariableBitWidthInt8ActPerTensorFloat
+
+    class VariableBitWidthInt8ActPerTensorFloatMinMaxInit(Int8ActPerTensorFloatMinMaxInit):
+        @value
+        def bit_width(module):
+            if module in activation_bit_width_map:
+                return activation_bit_width_map[module]
+            else:
+                activation_bit_width_map[module] = act_bit_width
+                return act_bit_width
+    
+    ACT_QUANT_MIN_MAX = VariableBitWidthInt8ActPerTensorFloatMinMaxInit
+
+    class VariableBitWidthUint8ActPerTensorFloatMaxInit(Uint8ActPerTensorFloatMaxInit):
+        @value
+        def bit_width(module):
+            if module in activation_bit_width_map:
+                return activation_bit_width_map[module]
+            else:
+                activation_bit_width_map[module] = act_bit_width
+                return act_bit_width
+    
+    U_ACT_QUANT_MIN_MAX = VariableBitWidthUint8ActPerTensorFloatMaxInit
+    
+    COMPUTE_LAYER_MAP = {
+    nn.AvgPool2d:
+        None,
+    nn.MultiheadAttention: (
+        qnn.QuantMultiheadAttention,
+        {
+            'in_proj_weight_quant': WEIGHT_QUANT,
+            'in_proj_bias_quant': Int32Bias,
+            'attn_output_weights_quant': U_ACT_QUANT,
+            'q_scaled_quant': ACT_QUANT,
+            'k_transposed_quant': ACT_QUANT,
+            'v_quant': ACT_QUANT,
+            'out_proj_input_quant': ACT_QUANT,
+            'out_proj_weight_quant': WEIGHT_QUANT,
+            'out_proj_bias_quant': Int32Bias,
+            'return_quant_tensor': True}),
+    nn.RNN: (
+        qnn.QuantRNN,
+        {
+            'weight_quant': WEIGHT_QUANT,
+            'bias_quant': Int32Bias,
+            'io_quant': ACT_QUANT,
+            'gate_acc_quant': ACT_QUANT,
+            'return_quant_tensor': True}),
+    nn.LSTM: (
+        qnn.QuantLSTM,
+        {
+            'weight_quant': WEIGHT_QUANT,
+            'bias_quant': Int32Bias,
+            'io_quant': ACT_QUANT,
+            'gate_acc_quant': ACT_QUANT,
+            'sigmoid_quant': U_ACT_QUANT,
+            'tanh_quant': ACT_QUANT,
+            'cell_state_quant': ACT_QUANT,
+            'return_quant_tensor': True}),
+    nn.Conv1d: (
+        qnn.QuantConv1d,
+        {
+            'weight_quant': WEIGHT_QUANT,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': True}),
+    nn.Conv2d: (
+        qnn.QuantConv2d,
+        {
+            'weight_quant': WEIGHT_QUANT,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': True}),
+    nn.ConvTranspose1d: (
+        qnn.QuantConvTranspose1d,
+        {
+            'weight_quant': WEIGHT_QUANT,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': True}),
+    nn.ConvTranspose2d: (
+        qnn.QuantConvTranspose2d,
+        {
+            'weight_quant': WEIGHT_QUANT,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': True}),
+    nn.Linear: (
+        qnn.QuantLinear,
+        {
+            'weight_quant': WEIGHT_QUANT,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': True})}
+
+    LAYERWISE_COMPUTE_LAYER_MAP = {
+        nn.AvgPool2d:
+            None,
+        nn.MultiheadAttention: (
+            qnn.QuantMultiheadAttention,
+            {
+                'in_proj_input_quant': ACT_QUANT,
+                'in_proj_weight_quant': WEIGHT_QUANT,
+                'in_proj_bias_quant': Int32Bias,
+                'attn_output_weights_quant': U_ACT_QUANT,
+                'q_scaled_quant': ACT_QUANT,
+                'k_transposed_quant': ACT_QUANT,
+                'v_quant': ACT_QUANT,
+                'out_proj_input_quant': ACT_QUANT,
+                'out_proj_weight_quant': WEIGHT_QUANT,
+                'out_proj_bias_quant': Int32Bias,
+                'return_quant_tensor': False}),
+        nn.LSTM: (
+            qnn.QuantLSTM,
+            {
+                'weight_quant': WEIGHT_QUANT,
+                'bias_quant': Int32Bias,
+                'io_quant': ACT_QUANT,
+                'gate_acc_quant': ACT_QUANT,
+                'sigmoid_quant': U_ACT_QUANT,
+                'tanh_quant': ACT_QUANT,
+                'cell_state_quant': ACT_QUANT,
+                'return_quant_tensor': False}),
+        nn.RNN: (
+            qnn.QuantRNN,
+            {
+                'weight_quant': WEIGHT_QUANT,
+                'bias_quant': Int32Bias,
+                'io_quant': ACT_QUANT,
+                'gate_acc_quant': ACT_QUANT,
+                'return_quant_tensor': False}),
+        nn.Conv1d: (
+            qnn.QuantConv1d,
+            {
+                'input_quant': ACT_QUANT,
+                'weight_quant': WEIGHT_QUANT,
+                'bias_quant': Int32Bias,
+                'return_quant_tensor': False}),
+        nn.Conv2d: (
+            qnn.QuantConv2d,
+            {
+                'input_quant': ACT_QUANT,
+                'weight_quant': WEIGHT_QUANT,
+                'bias_quant': Int32Bias,
+                'return_quant_tensor': False}),
+        nn.ConvTranspose1d: (
+            qnn.QuantConvTranspose1d,
+            {
+                'input_quant': ACT_QUANT,
+                'weight_quant': WEIGHT_QUANT,
+                'bias_quant': Int32Bias,
+                'return_quant_tensor': False}),
+        nn.ConvTranspose2d: (
+            qnn.QuantConvTranspose2d,
+            {
+                'input_quant': ACT_QUANT,
+                'weight_quant': WEIGHT_QUANT,
+                'bias_quant': Int32Bias,
+                'return_quant_tensor': False}),
+        nn.Linear: (
+            qnn.QuantLinear,
+            {
+                'input_quant': ACT_QUANT,
+                'weight_quant': WEIGHT_QUANT,
+                'bias_quant': Int32Bias,
+                'return_quant_tensor': False})}
+
+    UNSIGNED_ACT_TUPLE = (nn.ReLU, nn.ReLU6, nn.Sigmoid, nn.Hardsigmoid)
+
+    QUANT_ACT_MAP = {
+        nn.ReLU: (qnn.QuantReLU, {
+            'act_quant': U_ACT_QUANT, 'return_quant_tensor': True}),
+        nn.ReLU6: (
+            qnn.QuantReLU, {
+                'act_quant': U_ACT_QUANT_MIN_MAX, 'max_val': 6.,
+                'return_quant_tensor': True}),
+        nn.Hardtanh: (
+            qnn.QuantHardTanh,
+            {
+                'act_quant': ACT_QUANT_MIN_MAX,
+                'max_val': lambda module: module.max_val,
+                'min_val': lambda module: module.min_val,
+                'return_quant_tensor': True}),
+        nn.Sigmoid:
+            (qnn.QuantSigmoid, {
+                'act_quant': U_ACT_QUANT,
+                'return_quant_tensor': True,}),}
+
+    QUANT_IDENTITY_MAP = {
+        'signed':
+            (qnn.QuantIdentity, {
+                'act_quant': ACT_QUANT, 'return_quant_tensor': True}),
+        'unsigned':
+            (qnn.QuantIdentity, {
+                'act_quant': U_ACT_QUANT, 'return_quant_tensor': True}),}
+    LAYER_MAP = {
     'generic': [COMPUTE_LAYER_MAP, QUANT_ACT_MAP, QUANT_IDENTITY_MAP],
     'layerwise': [LAYERWISE_COMPUTE_LAYER_MAP],
     'flexml': [FLEXML_COMPUTE_LAYER_MAP, FLEXML_QUANT_ACT_MAP, FLEXML_QUANT_IDENTITY_MAP]}
 
-ASYMMETRIC_ACT_QUANT_MAP = {
-    'generic': ShiftedUint8ActPerTensorFloat,
-    'layerwise': ShiftedUint8ActPerTensorFloat,
-    'flexml': ShiftedUint8ActPerTensorFixedPoint}
+    return LAYER_MAP[backend]
 
 QUANTIZE_MAP = {'layerwise': layerwise_quantize, 'generic': quantize, 'flexml': quantize_flexml}
+
+ASYMMETRIC_ACT_QUANT_MAP = {
+        'generic': ShiftedUint8ActPerTensorFloat,
+        'layerwise': ShiftedUint8ActPerTensorFloat,
+        'flexml': ShiftedUint8ActPerTensorFixedPoint}
 
 BIAS_BIT_WIDTH_MAP = {'int32': Int32Bias, 'int16': Int16Bias}
 
@@ -43,14 +273,17 @@ BIAS_BIT_WIDTH_MAP = {'int32': Int32Bias, 'int16': Int16Bias}
 def quantize_model(
         model,
         backend,
-        act_bit_width,
-        weight_bit_width,
         bias_bit_width,
         scaling_per_output_channel,
         act_quant_percentile,
         act_quant_type,
         scale_factor_type,
+        weight_bit_width_map,
+        activation_bit_width_map,
+        act_bit_width = {},
+        weight_bit_width = {},
         weight_narrow_range=False):
+    
     # Define what quantize function to use and, based on the given configuration, its arguments
     quantize_fn = QUANTIZE_MAP[backend]
 
@@ -59,7 +292,7 @@ def quantize_model(
         act_quant_asym = ASYMMETRIC_ACT_QUANT_MAP[backend]
 
     maps = update_quant_maps(
-        LAYER_MAP[backend],
+        get_layer_map(weight_bit_width_map, activation_bit_width_map,weight_bit_width,act_bit_width,backend),
         scale_factor_type=scale_factor_type,
         bias_bit_width=bias_bit_width,
         scaling_per_output_channel=scaling_per_output_channel,
@@ -95,7 +328,7 @@ def update_quant_maps(
     Starting from pre-defined quantizers, modify them to match the desired configuration
     """
 
-    act_kwargs = {'bit_width': act_bit_width, 'high_percentile_q': act_quant_percentile}
+    act_kwargs = {'high_percentile_q': act_quant_percentile}
 
     if act_quant_asym is not None:
         act_kwargs['act_quant'] = act_quant_asym
@@ -103,7 +336,6 @@ def update_quant_maps(
 
     weight_kwargs = {
         'scaling_per_output_channel': scaling_per_output_channel,
-        'bit_width': weight_bit_width,
         'narrow_range': weight_narrow_range}
 
     scale_factor_dict = {}
@@ -173,14 +405,14 @@ def calibrate(calib_loader, model, bias_corr=True):
     device = next(model.parameters()).device
     with torch.no_grad():
         with calibration_mode(model):
-            for i, (images, target) in enumerate(calib_loader):
+            for i, (images, target) in tqdm(enumerate(calib_loader), total=len(calib_loader)):
                 images = images.to(device)
                 images = images.to(dtype)
                 model(images)
 
         if bias_corr:
             with bias_correction_mode(model):
-                for i, (images, target) in enumerate(calib_loader):
+                for i, (images, target) in tqdm(enumerate(calib_loader), total=len(calib_loader)):
                     images = images.to(device)
                     images = images.to(dtype)
                     model(images)

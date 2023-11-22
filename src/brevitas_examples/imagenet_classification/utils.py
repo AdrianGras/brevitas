@@ -4,10 +4,14 @@ import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
+import matplotlib.pyplot as plt
+from IPython.display import clear_output
+from tqdm import tqdm
 SEED = 123456
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
+
 
 
 class AverageMeter(object):
@@ -60,7 +64,10 @@ def accuracy(output, target, topk=(1,), stable=False):
         return res
 
 
-def validate(val_loader, model):
+
+
+
+def validate(val_loader, model, class_names):
     """
     Run validation on the desired dataset
     """
@@ -73,7 +80,8 @@ def validate(val_loader, model):
     dtype = next(model.parameters()).dtype
     device = next(model.parameters()).device
     with torch.no_grad():
-        for i, (images, target) in enumerate(val_loader):
+        pbar = tqdm(enumerate(val_loader), total=len(val_loader))
+        for i, (images, target) in pbar:
             target = target.to(device)
             target = target.to(dtype)
             images = images.to(device)
@@ -83,9 +91,33 @@ def validate(val_loader, model):
             # measure accuracy
             acc1, = accuracy(output, target, stable=True)
             top1.update(acc1[0], images.size(0))
+            
+            # update progress bar description
+            pbar.set_description(str(top1))
+            # Show some sample images
+            if i % 50 == 0:  # every 10 batches
+                clear_output(wait=False) 
+                pred = output.argmax(dim=1)
+                # unnormalize images
+                mean = torch.tensor([0.485, 0.456, 0.406]).reshape(1,3,1,1).to(device)
+                std = torch.tensor([0.229, 0.224, 0.225]).reshape(1,3,1,1).to(device)
+                images = images * std + mean
+
+                images = images.permute(0, 2, 3, 1)  # change from (batch, channel, height, width) to (batch, height, width, channel)
+                images = images.cpu().numpy()
+                fig, axs = plt.subplots(1, 5, figsize=(15, 3))  # plot 5 images
+                for j, ax in enumerate(axs):
+                    ax.imshow(images[j])
+                    # change title color based on whether prediction is correct or not
+                    title_color = 'g' if pred[j] == target[j] else 'r'
+                    ax.set_title("Pred: {}\nTrue: {}".format(class_names[pred[j].item()], class_names[target[j].item()]), color=title_color)
+                    ax.axis('off')
+                plt.show()
 
         print_accuracy(top1, 'Total:')
     return top1.avg.cpu().numpy()
+
+
 
 
 def generate_dataset(dir, resize_shape=256, center_crop_shape=224, inception_preprocessing=False):
@@ -120,6 +152,7 @@ def generate_dataloader(
     if subset_size is not None:
         dataset = torch.utils.data.Subset(dataset, list(range(subset_size)))
     loader = torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, num_workers=num_workers, pin_memory=True)
+        dataset, batch_size=batch_size, num_workers=num_workers, pin_memory=True, shuffle = True)
 
     return loader
+
