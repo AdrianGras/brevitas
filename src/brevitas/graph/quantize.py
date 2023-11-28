@@ -32,244 +32,173 @@ from brevitas.quant import Uint8ActPerTensorFloat
 from brevitas.quant import Uint8ActPerTensorFloatMaxInit
 from brevitas.quant.scaled_int import Int8WeightPerTensorFloat
 
-
-
-def get_layer_map(weight_bit_width_map, activation_bit_width_map, weight_bit_width, act_bit_width, backend):
-    class VariableBitWidthInt8WeightPerTensorFixedPoint(Int8WeightPerTensorFixedPoint):
-        @value
-        def bit_width(module):
-            if module in weight_bit_width_map:
-                return weight_bit_width_map[module]
-            else:
-                weight_bit_width_map[module] = weight_bit_width
-                return weight_bit_width
-    WEIGHT_QUANT = VariableBitWidthInt8WeightPerTensorFixedPoint
-
-    class VariableBitWidthUint8ActPerTensorFloat(Uint8ActPerTensorFloat):
-        @value
-        def bit_width(module):
-            if module in activation_bit_width_map:
-                return activation_bit_width_map[module]
-            else:
-                activation_bit_width_map[module] = act_bit_width
-                return act_bit_width
-    
-    U_ACT_QUANT = VariableBitWidthUint8ActPerTensorFloat
-
-    class VariableBitWidthInt8ActPerTensorFloat(Int8ActPerTensorFloat):
-        @value
-        def bit_width(module):
-            if module in activation_bit_width_map:
-                return activation_bit_width_map[module]
-            else:
-                activation_bit_width_map[module] = act_bit_width
-                return act_bit_width
-    
-    ACT_QUANT = VariableBitWidthInt8ActPerTensorFloat
-
-    class VariableBitWidthInt8ActPerTensorFloatMinMaxInit(Int8ActPerTensorFloatMinMaxInit):
-        @value
-        def bit_width(module):
-            if module in activation_bit_width_map:
-                return activation_bit_width_map[module]
-            else:
-                activation_bit_width_map[module] = act_bit_width
-                return act_bit_width
-    
-    ACT_QUANT_MIN_MAX = VariableBitWidthInt8ActPerTensorFloatMinMaxInit
-
-    class VariableBitWidthUint8ActPerTensorFloatMaxInit(Uint8ActPerTensorFloatMaxInit):
-        @value
-        def bit_width(module):
-            if module in activation_bit_width_map:
-                return activation_bit_width_map[module]
-            else:
-                activation_bit_width_map[module] = act_bit_width
-                return act_bit_width
-    
-    U_ACT_QUANT_MIN_MAX = VariableBitWidthUint8ActPerTensorFloatMaxInit
-    
-    COMPUTE_LAYER_MAP = {
+COMPUTE_LAYER_MAP = {
     nn.AvgPool2d:
         None,
     nn.MultiheadAttention: (
         qnn.QuantMultiheadAttention,
         {
-            'in_proj_weight_quant': WEIGHT_QUANT,
+            'in_proj_weight_quant': Int8WeightPerTensorFloat,
             'in_proj_bias_quant': Int32Bias,
-            'attn_output_weights_quant': U_ACT_QUANT,
-            'q_scaled_quant': ACT_QUANT,
-            'k_transposed_quant': ACT_QUANT,
-            'v_quant': ACT_QUANT,
-            'out_proj_input_quant': ACT_QUANT,
-            'out_proj_weight_quant': WEIGHT_QUANT,
+            'attn_output_weights_quant': Uint8ActPerTensorFloat,
+            'q_scaled_quant': Int8ActPerTensorFloat,
+            'k_transposed_quant': Int8ActPerTensorFloat,
+            'v_quant': Int8ActPerTensorFloat,
+            'out_proj_input_quant': Int8ActPerTensorFloat,
+            'out_proj_weight_quant': Int8WeightPerTensorFloat,
             'out_proj_bias_quant': Int32Bias,
             'return_quant_tensor': True}),
     nn.RNN: (
         qnn.QuantRNN,
         {
-            'weight_quant': WEIGHT_QUANT,
+            'weight_quant': Int8WeightPerTensorFloat,
             'bias_quant': Int32Bias,
-            'io_quant': ACT_QUANT,
-            'gate_acc_quant': ACT_QUANT,
+            'io_quant': Int8ActPerTensorFloat,
+            'gate_acc_quant': Int8ActPerTensorFloat,
             'return_quant_tensor': True}),
     nn.LSTM: (
         qnn.QuantLSTM,
         {
-            'weight_quant': WEIGHT_QUANT,
+            'weight_quant': Int8WeightPerTensorFloat,
             'bias_quant': Int32Bias,
-            'io_quant': ACT_QUANT,
-            'gate_acc_quant': ACT_QUANT,
-            'sigmoid_quant': U_ACT_QUANT,
-            'tanh_quant': ACT_QUANT,
-            'cell_state_quant': ACT_QUANT,
+            'io_quant': Int8ActPerTensorFloat,
+            'gate_acc_quant': Int8ActPerTensorFloat,
+            'sigmoid_quant': Uint8ActPerTensorFloat,
+            'tanh_quant': Int8ActPerTensorFloat,
+            'cell_state_quant': Int8ActPerTensorFloat,
             'return_quant_tensor': True}),
     nn.Conv1d: (
         qnn.QuantConv1d,
         {
-            'weight_quant': WEIGHT_QUANT,
+            'weight_quant': Int8WeightPerTensorFloat,
             'bias_quant': Int32Bias,
             'return_quant_tensor': True}),
     nn.Conv2d: (
         qnn.QuantConv2d,
         {
-            'weight_quant': WEIGHT_QUANT,
+            'weight_quant': Int8WeightPerTensorFloat,
             'bias_quant': Int32Bias,
             'return_quant_tensor': True}),
     nn.ConvTranspose1d: (
         qnn.QuantConvTranspose1d,
         {
-            'weight_quant': WEIGHT_QUANT,
+            'weight_quant': Int8WeightPerTensorFloat,
             'bias_quant': Int32Bias,
             'return_quant_tensor': True}),
     nn.ConvTranspose2d: (
         qnn.QuantConvTranspose2d,
         {
-            'weight_quant': WEIGHT_QUANT,
+            'weight_quant': Int8WeightPerTensorFloat,
             'bias_quant': Int32Bias,
             'return_quant_tensor': True}),
     nn.Linear: (
         qnn.QuantLinear,
         {
-            'weight_quant': WEIGHT_QUANT,
+            'weight_quant': Int8WeightPerTensorFloat,
             'bias_quant': Int32Bias,
             'return_quant_tensor': True})}
 
-    LAYERWISE_COMPUTE_LAYER_MAP = {
-        nn.AvgPool2d:
-            None,
-        nn.MultiheadAttention: (
-            qnn.QuantMultiheadAttention,
-            {
-                'in_proj_input_quant': ACT_QUANT,
-                'in_proj_weight_quant': WEIGHT_QUANT,
-                'in_proj_bias_quant': Int32Bias,
-                'attn_output_weights_quant': U_ACT_QUANT,
-                'q_scaled_quant': ACT_QUANT,
-                'k_transposed_quant': ACT_QUANT,
-                'v_quant': ACT_QUANT,
-                'out_proj_input_quant': ACT_QUANT,
-                'out_proj_weight_quant': WEIGHT_QUANT,
-                'out_proj_bias_quant': Int32Bias,
-                'return_quant_tensor': False}),
-        nn.LSTM: (
-            qnn.QuantLSTM,
-            {
-                'weight_quant': WEIGHT_QUANT,
-                'bias_quant': Int32Bias,
-                'io_quant': ACT_QUANT,
-                'gate_acc_quant': ACT_QUANT,
-                'sigmoid_quant': U_ACT_QUANT,
-                'tanh_quant': ACT_QUANT,
-                'cell_state_quant': ACT_QUANT,
-                'return_quant_tensor': False}),
-        nn.RNN: (
-            qnn.QuantRNN,
-            {
-                'weight_quant': WEIGHT_QUANT,
-                'bias_quant': Int32Bias,
-                'io_quant': ACT_QUANT,
-                'gate_acc_quant': ACT_QUANT,
-                'return_quant_tensor': False}),
-        nn.Conv1d: (
-            qnn.QuantConv1d,
-            {
-                'input_quant': ACT_QUANT,
-                'weight_quant': WEIGHT_QUANT,
-                'bias_quant': Int32Bias,
-                'return_quant_tensor': False}),
-        nn.Conv2d: (
-            qnn.QuantConv2d,
-            {
-                'input_quant': ACT_QUANT,
-                'weight_quant': WEIGHT_QUANT,
-                'bias_quant': Int32Bias,
-                'return_quant_tensor': False}),
-        nn.ConvTranspose1d: (
-            qnn.QuantConvTranspose1d,
-            {
-                'input_quant': ACT_QUANT,
-                'weight_quant': WEIGHT_QUANT,
-                'bias_quant': Int32Bias,
-                'return_quant_tensor': False}),
-        nn.ConvTranspose2d: (
-            qnn.QuantConvTranspose2d,
-            {
-                'input_quant': ACT_QUANT,
-                'weight_quant': WEIGHT_QUANT,
-                'bias_quant': Int32Bias,
-                'return_quant_tensor': False}),
-        nn.Linear: (
-            qnn.QuantLinear,
-            {
-                'input_quant': ACT_QUANT,
-                'weight_quant': WEIGHT_QUANT,
-                'bias_quant': Int32Bias,
-                'return_quant_tensor': False})}
+LAYERWISE_COMPUTE_LAYER_MAP = {
+    nn.AvgPool2d:
+        None,
+    nn.MultiheadAttention: (
+        qnn.QuantMultiheadAttention,
+        {
+            'in_proj_input_quant': Int8ActPerTensorFloat,
+            'in_proj_weight_quant': Int8WeightPerTensorFloat,
+            'in_proj_bias_quant': Int32Bias,
+            'attn_output_weights_quant': Uint8ActPerTensorFloat,
+            'q_scaled_quant': Int8ActPerTensorFloat,
+            'k_transposed_quant': Int8ActPerTensorFloat,
+            'v_quant': Int8ActPerTensorFloat,
+            'out_proj_input_quant': Int8ActPerTensorFloat,
+            'out_proj_weight_quant': Int8WeightPerTensorFloat,
+            'out_proj_bias_quant': Int32Bias,
+            'return_quant_tensor': False}),
+    nn.LSTM: (
+        qnn.QuantLSTM,
+        {
+            'weight_quant': Int8WeightPerTensorFloat,
+            'bias_quant': Int32Bias,
+            'io_quant': Int8ActPerTensorFloat,
+            'gate_acc_quant': Int8ActPerTensorFloat,
+            'sigmoid_quant': Uint8ActPerTensorFloat,
+            'tanh_quant': Int8ActPerTensorFloat,
+            'cell_state_quant': Int8ActPerTensorFloat,
+            'return_quant_tensor': False}),
+    nn.RNN: (
+        qnn.QuantRNN,
+        {
+            'weight_quant': Int8WeightPerTensorFloat,
+            'bias_quant': Int32Bias,
+            'io_quant': Int8ActPerTensorFloat,
+            'gate_acc_quant': Int8ActPerTensorFloat,
+            'return_quant_tensor': False}),
+    nn.Conv1d: (
+        qnn.QuantConv1d,
+        {
+            'input_quant': Int8ActPerTensorFloat,
+            'weight_quant': Int8WeightPerTensorFloat,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': False}),
+    nn.Conv2d: (
+        qnn.QuantConv2d,
+        {
+            'input_quant': Int8ActPerTensorFloat,
+            'weight_quant': Int8WeightPerTensorFloat,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': False}),
+    nn.ConvTranspose1d: (
+        qnn.QuantConvTranspose1d,
+        {
+            'input_quant': Int8ActPerTensorFloat,
+            'weight_quant': Int8WeightPerTensorFloat,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': False}),
+    nn.ConvTranspose2d: (
+        qnn.QuantConvTranspose2d,
+        {
+            'input_quant': Int8ActPerTensorFloat,
+            'weight_quant': Int8WeightPerTensorFloat,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': False}),
+    nn.Linear: (
+        qnn.QuantLinear,
+        {
+            'input_quant': Int8ActPerTensorFloat,
+            'weight_quant': Int8WeightPerTensorFloat,
+            'bias_quant': Int32Bias,
+            'return_quant_tensor': False})}
 
-    UNSIGNED_ACT_TUPLE = (nn.ReLU, nn.ReLU6, nn.Sigmoid, nn.Hardsigmoid)
+UNSIGNED_ACT_TUPLE = (nn.ReLU, nn.ReLU6, nn.Sigmoid, nn.Hardsigmoid)
 
-    QUANT_ACT_MAP = {
-        nn.ReLU: (qnn.QuantReLU, {
-            'act_quant': U_ACT_QUANT, 'return_quant_tensor': True}),
-        nn.ReLU6: (
-            qnn.QuantReLU, {
-                'act_quant': U_ACT_QUANT_MIN_MAX, 'max_val': 6.,
-                'return_quant_tensor': True}),
-        nn.Hardtanh: (
-            qnn.QuantHardTanh,
-            {
-                'act_quant': ACT_QUANT_MIN_MAX,
-                'max_val': lambda module: module.max_val,
-                'min_val': lambda module: module.min_val,
-                'return_quant_tensor': True}),
-        nn.Sigmoid:
-            (qnn.QuantSigmoid, {
-                'act_quant': U_ACT_QUANT,
-                'return_quant_tensor': True,}),}
+QUANT_ACT_MAP = {
+    nn.ReLU: (qnn.QuantReLU, {
+        'act_quant': Uint8ActPerTensorFloat, 'return_quant_tensor': True}),
+    nn.ReLU6: (
+        qnn.QuantReLU, {
+            'act_quant': Uint8ActPerTensorFloatMaxInit, 'max_val': 6.,
+            'return_quant_tensor': True}),
+    nn.Hardtanh: (
+        qnn.QuantHardTanh,
+        {
+            'act_quant': Int8ActPerTensorFloatMinMaxInit,
+            'max_val': lambda module: module.max_val,
+            'min_val': lambda module: module.min_val,
+            'return_quant_tensor': True}),
+    nn.Sigmoid:
+        (qnn.QuantSigmoid, {
+            'act_quant': Uint8ActPerTensorFloat,
+            'return_quant_tensor': True,}),}
 
-    QUANT_IDENTITY_MAP = {
-        'signed':
-            (qnn.QuantIdentity, {
-                'act_quant': ACT_QUANT, 'return_quant_tensor': True}),
-        'unsigned':
-            (qnn.QuantIdentity, {
-                'act_quant': U_ACT_QUANT, 'return_quant_tensor': True}),}
-    LAYER_MAP = {
-    'generic': [COMPUTE_LAYER_MAP, QUANT_ACT_MAP, QUANT_IDENTITY_MAP],
-    'layerwise': [LAYERWISE_COMPUTE_LAYER_MAP],
-    'flexml': [FLEXML_COMPUTE_LAYER_MAP, FLEXML_QUANT_ACT_MAP, FLEXML_QUANT_IDENTITY_MAP]}
+QUANT_IDENTITY_MAP = {
+    'signed':
+        (qnn.QuantIdentity, {
+            'act_quant': Int8ActPerTensorFloat, 'return_quant_tensor': True}),
+    'unsigned':
+        (qnn.QuantIdentity, {
+            'act_quant': Uint8ActPerTensorFloat, 'return_quant_tensor': True}),}
 
-    return LAYER_MAP[backend]
-
-QUANTIZE_MAP = {'layerwise': layerwise_quantize, 'generic': quantize, 'flexml': quantize_flexml}
-
-ASYMMETRIC_ACT_QUANT_MAP = {
-        'generic': ShiftedUint8ActPerTensorFloat,
-        'layerwise': ShiftedUint8ActPerTensorFloat,
-        'flexml': ShiftedUint8ActPerTensorFixedPoint}
-
-BIAS_BIT_WIDTH_MAP = {'int32': Int32Bias, 'int16': Int16Bias}
 
 def align_input_quant(
         module, shared_quant_identity, shared_quant_identity_name, quant_identity_map, align_sign):
@@ -288,6 +217,9 @@ def align_input_quant(
                 quant_module_class,
                 {
                     **quant_module_kwargs,
+                    'bit_width_impl': 
+                        shared_quant_identity.act_quant.fused_activation_quant_proxy.tensor_quant
+                        .msb_clamp_bit_width_impl,
                     'scaling_impl':
                         shared_quant_identity.act_quant.fused_activation_quant_proxy.tensor_quant
                         .scaling_impl,
@@ -310,6 +242,9 @@ def align_input_quant(
                     shared_quant_identity.act_quant.fused_activation_quant_proxy.tensor_quant}
         else:
             partial_config = {
+                'bit_width_impl': 
+                    shared_quant_identity.act_quant.fused_activation_quant_proxy.tensor_quant
+                    .msb_clamp_bit_width_impl,
                 'scaling_impl':
                     shared_quant_identity.act_quant.fused_activation_quant_proxy.tensor_quant
                     .scaling_impl,
@@ -357,49 +292,36 @@ def preprocess_for_quantize(
     model.train(training_state)
     return model
 
-def quantize_model(
-        model,
-        backend,
-        act_bit_width,
-        weight_bit_width,
-        bias_bit_width,
-        scaling_per_output_channel,
-        act_quant_percentile,
-        act_quant_type,
-        scale_factor_type,
-        weight_bit_width_map,
-        activation_bit_width_map,
-        weight_narrow_range=False):
-    
-    # Define what quantize function to use and, based on the given configuration, its arguments
-    quantize_fn = QUANTIZE_MAP[backend]
 
-    act_quant_asym = None
-    if act_quant_type == 'asymmetric':
-        act_quant_asym = ASYMMETRIC_ACT_QUANT_MAP[backend]
-
-    maps = update_quant_maps(
-        get_layer_map(weight_bit_width_map, activation_bit_width_map,weight_bit_width,act_bit_width,backend),
-        scale_factor_type=scale_factor_type,
-        bias_bit_width=bias_bit_width,
-        scaling_per_output_channel=scaling_per_output_channel,
-        act_quant_percentile=act_quant_percentile,
-        act_quant_asym=act_quant_asym,
-        act_bit_width=act_bit_width,
-        weight_bit_width=weight_bit_width,
-        weight_narrow_range=weight_narrow_range)
-
-    if len(maps) == 3:
-        # Generic and flexml requires three mappings for quantization
-        quantize_kwargs = {
-            'compute_layer_map': maps[0], 'quant_act_map': maps[1], 'quant_identity_map': maps[2]}
-    elif len(maps) == 1:
-        # Layerwise requires only the compute layer mapping
-        quantize_kwargs = {'compute_layer_map': maps[0]}
-
-    quant_model = quantize_fn(model, **quantize_kwargs)
-    return quant_model
-
+def quantize(
+        graph_model,
+        quant_identity_map=QUANT_IDENTITY_MAP,
+        compute_layer_map=COMPUTE_LAYER_MAP,
+        quant_act_map=QUANT_ACT_MAP,
+        unsigned_act_tuple=UNSIGNED_ACT_TUPLE,
+        requantize_layer_handler_output=True):
+    ignore_missing_keys_state = config.IGNORE_MISSING_KEYS
+    config.IGNORE_MISSING_KEYS = True
+    training_state = graph_model.training
+    graph_model.eval()
+    graph_model = inp_placeholder_handler(
+        graph_model, input_quantizer=quant_identity_map.get('signed', None))
+    graph_model = layer_handler(graph_model, layer_map=quant_act_map, requantize_output=False)
+    graph_model = add_output_quant_handler(
+        graph_model, quant_identity_map, quant_act_map, unsigned_act_tuple)
+    graph_model = layer_handler(
+        graph_model,
+        layer_map=compute_layer_map,
+        quant_identity_map=quant_identity_map,
+        quant_act_map=quant_act_map,
+        unsigned_act_tuple=unsigned_act_tuple,
+        requantize_output=requantize_layer_handler_output)
+    graph_model = residual_handler(
+        graph_model, quant_identity_map, quant_act_map, unsigned_act_tuple, align_input_quant)
+    graph_model = DisableLastReturnQuantTensor().apply(graph_model)
+    graph_model.train(training_state)
+    config.IGNORE_MISSING_KEYS = ignore_missing_keys_state
+    return graph_model
 
 
 def layerwise_quantize(graph_model, compute_layer_map=LAYERWISE_COMPUTE_LAYER_MAP):
