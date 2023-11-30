@@ -67,7 +67,7 @@ def accuracy(output, target, topk=(1,), stable=False):
 
 
 
-def validate(val_loader, model, class_names):
+def validate(val_loader, model, class_names = None, printResults = False):
     """
     Run validation on the desired dataset
     """
@@ -94,8 +94,10 @@ def validate(val_loader, model, class_names):
             
             # update progress bar description
             pbar.set_description(str(top1))
+
+
             # Show some sample images
-            if i % 50 == 0:  # every 10 batches
+            if printResults and i % 50 == 0:  # every 10 batches
                 clear_output(wait=False) 
                 pred = output.argmax(dim=1)
                 # unnormalize images
@@ -110,11 +112,14 @@ def validate(val_loader, model, class_names):
                     ax.imshow(images[j])
                     # change title color based on whether prediction is correct or not
                     title_color = 'g' if pred[j] == target[j] else 'r'
-                    ax.set_title("Pred: {}\nTrue: {}".format(class_names[pred[j].item()], class_names[target[j].item()]), color=title_color)
+                    if class_names is None:
+                        ax.set_title("Pred: {}\nTrue: {}".format(pred[j].item(), target[j].item()), color=title_color)
+                    else:
+                        ax.set_title("Pred: {}\nTrue: {}".format(class_names[pred[j].item()], class_names[target[j].item()]), color=title_color)
                     ax.axis('off')
                 plt.show()
-
-        print_accuracy(top1, 'Total:')
+        if printResults:
+            print_accuracy(top1, 'Total:')
     return top1.avg.cpu().numpy()
 
 
